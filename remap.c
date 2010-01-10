@@ -21,13 +21,13 @@ const struct flag_mapping event_flags[] = {
   {0,0}
 };
 
-
 CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef event, void *data) {
-  CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
-  CGEventFlags flagbits = CGEventGetFlags(event);
   char flags[1024] = {0};
   int i;
   CGEventSourceRef source;
+
+  CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+  CGEventFlags flagbits = CGEventGetFlags(event);
 
   if (!(source = CGEventCreateSourceFromEvent(event))) return event;
 
@@ -40,6 +40,9 @@ CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef 
   int new_keycode, state=0;
   new_keycode = KeyTranslate(GetScriptManagerVariable(smKCHRCache), keycode, &state);
   printf("%x -> %x .. flg: %s \n", keycode, new_keycode, flags);
+
+  if (keycode == 0)
+    CGEventSetIntegerValueField(event, kCGKeyboardEventKeycode, 0xb);
 
   CFRelease(source);
 
