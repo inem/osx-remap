@@ -41,23 +41,6 @@ CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef 
   new_keycode = KeyTranslate(GetScriptManagerVariable(smKCHRCache), keycode, &state);
   printf("%x -> %x .. flg: %s \n", keycode, new_keycode, flags);
 
-  /*
-  wchar_t us[256];
-  int us_len;
-
-  TISInputSourceRef kb = TISCopyCurrentKeyboardInputSource();
-  CFDataRef ref = (CFDataRef)TISGetInputSourceProperty(kb, kTISPropertyUnicodeKeyLayoutData);
-  UCKeyboardLayout *layout = CFDataGetBytePtr(ref);
-  int type = CGEventSourceGetKeyboardType(source);
-  OSStatus ret = UCKeyTranslate(layout, keycode, kUCKeyActionDisplay, 0, type, 
-                                kUCKeyTranslateNoDeadKeysBit, &i, sizeof(us), &us_len, us);
-
-  printf("%x -> %x .. flg: %s \n", keycode, new_keycode, flags);
-  for (i = 0; i < us_len*2; i++)
-    printf("%x ", us[i]);
-  printf("\n");
-  */
-
   CFRelease(source);
 
   return event;
