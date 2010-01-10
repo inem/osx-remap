@@ -21,11 +21,15 @@ const struct flag_mapping event_flags[] = {
   {0,0}
 };
 
+void sig_handler(int sig) {
+  CFRunLoopStop(CFRunLoopGetCurrent());
+}
+
 CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef event, void *data) {
   char flags[1024] = {0};
   int i;
   CGEventSourceRef source;
-
+  
   CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
   CGEventFlags flagbits = CGEventGetFlags(event);
 
@@ -64,8 +68,12 @@ main() {
   }
 
   CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+
   CFRelease(port);
   CFRelease(source);
+
+  signal(SIGINT, sig_handler);
+  signal(SIGTERM, sig_handler);
 
   CFRunLoopRun();
 }
