@@ -1,2 +1,2 @@
 remap: remap.c
-	gcc -o remap remap.c -framework Carbon
+	gcc -o remap remap.c -g -framework Carbon

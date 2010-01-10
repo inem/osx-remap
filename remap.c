@@ -59,14 +59,27 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
 
   // arrows
   if (keycode >= 0x7b && keycode <= 0x7e && flagscopy & (NUM|FN)) {
-    // change spaces with cmd+ctrl+arrows instead of just cmd+arrows
-    if (flagscopy == (CMD|CTRL|NUM|FN)) {
-      flags &= ~CTRL;
+    // map cmd-arrow to alt-*
+    if (flagscopy == (CMD|NUM|FN)) {
+      flags &= ~CMD;
+      flags |= ALT;
     }
+
+    // change spaces with cmd+ctrl+arrows instead of just cmd+arrows
+    if (flagscopy == (CMD|CTRL|NUM|FN))
+      flags &= ~CTRL;
+
     // move win to diff space with shift+cmd+ctrl+arrows instead of just cmd+ctrl+arrows
     if (flagscopy == (CMD|CTRL|SHIFT|NUM|FN))
       flags &= ~SHIFT;
   }
+
+  // arrows or backspace
+  if (keycode == 0x33 && flagscopy == CMD) {
+    flags &= ~CMD;
+    flags |= ALT;
+  }
+
 
   /* this has weird side effects, braindump:
 
