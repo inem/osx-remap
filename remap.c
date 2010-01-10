@@ -16,8 +16,8 @@ const struct flag_mapping event_flags[] = {
   { kCGEventFlagMaskSecondaryFn, "fn" }, 
   /* Identifies key events from numeric keypad area on extended keyboards. */
   { kCGEventFlagMaskNumericPad, "numpad" },
-  /* Indicates if mouse/pen movement events are not being coalesced */
-  { kCGEventFlagMaskNonCoalesced, "noncoalesced" },
+//  /* Indicates if mouse/pen movement events are not being coalesced */
+//  { kCGEventFlagMaskNonCoalesced, "noncoalesced" },
   {0,0}
 };
 
@@ -25,28 +25,51 @@ void sig_handler(int sig) {
   CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
-CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef event, void *data) {
-  char flags[1024] = {0};
+char *key_to_str(CGKeyCode keycode, CGEventFlags flags) {
+  static char str[1024];
+  char flags_str[1024] = {0};
   int i;
-  CGEventSourceRef source;
-  
-  CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
-  CGEventFlags flagbits = CGEventGetFlags(event);
-
-  if (!(source = CGEventCreateSourceFromEvent(event))) return event;
 
   for (i = 0; event_flags[i].name; i++) {
-    if (flagbits & event_flags[i].bit) {
-      strcat(flags, event_flags[i].name); strcat(flags, " ");
+    if (flags & event_flags[i].bit) {
+      strcat(flags_str, event_flags[i].name); strcat(flags_str, "-");
     }
   }
 
-  int new_keycode, state=0;
-  new_keycode = KeyTranslate(GetScriptManagerVariable(smKCHRCache), keycode, &state);
-  printf("%x -> %x .. flg: %s \n", keycode, new_keycode, flags);
+  sprintf(str, "%s%x", flags_str, keycode);
 
-  if (keycode == 0)
-    CGEventSetIntegerValueField(event, kCGKeyboardEventKeycode, 0xb);
+  return str;
+}
+
+void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
+  if (keycode == 0x30 && flags & kCGEventFlagMaskCommand) {
+    flags &= ~kCGEventFlagMaskCommand;
+    flags |= kCGEventFlagMaskAlternate;
+  }
+
+  if (flags & kCGEventFlagMaskControl) {
+    flags &= ~kCGEventFlagMaskControl;
+    flags |= kCGEventFlagMaskSecondaryFn;
+  } else if (flags & kCGEventFlagMaskSecondaryFn && ! (flags & kCGEventFlagMaskNumericPad)) {
+    flags &= ~kCGEventFlagMaskSecondaryFn;
+    flags |= kCGEventFlagMaskControl;
+  }
+
+  printf("%s\n", key_to_str(keycode, flags));
+
+  CGEventSetFlags(event, flags);
+}
+
+CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef event, void *data) {
+  CGEventSourceRef source;
+  
+  CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+  CGEventFlags flags = CGEventGetFlags(event);
+
+  if (!(source = CGEventCreateSourceFromEvent(event))) return event;
+
+  printf("%s -> ", key_to_str(keycode, flags));
+  remap_keys(event, keycode, flags);
 
   CFRelease(source);
 
