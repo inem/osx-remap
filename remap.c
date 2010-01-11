@@ -77,7 +77,7 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
       flags &= ~SHIFT;
   }
 
-  // arrows or backspace
+  // cmd-backspace to alt-backspace
   if (keycode == 0x33 && flagscopy == CMD) {
     flags &= ~CMD;
     flags |= ALT;
