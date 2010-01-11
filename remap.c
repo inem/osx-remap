@@ -1,4 +1,7 @@
 #include <Carbon/Carbon.h>
+#include <sys/time.h>
+
+struct timeval last_event_1 = { 0, 0 }, last_event_2 = { 0, 0 };
 
 struct flag_mapping {
   CGEventFlags bit;
@@ -29,7 +32,7 @@ const struct flag_mapping event_flags[] = {
   {0,0}
 };
 
-void sig_handler(int sig) {
+void stop_loop() {
   CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
@@ -105,7 +108,18 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
   CGEventSetFlags(event, flags);
 }
 
+void check_times() {
+  long double t1 = last_event_1.tv_sec + ((long double)last_event_1.tv_usec/(long double)1000000.0);
+  long double t2 = last_event_2.tv_sec + ((long double)last_event_2.tv_usec/(long double)1000000.0);
+
+  printf("time diff %Lf\n", fabsl(t1-t2));
+  // more than a 0.1 second delay between events, highly likely that one listener is dead
+  if (fabsl(t1 - t2) > 0.1) stop_loop();
+}
+
 CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef event, void *data) {
+  gettimeofday(&last_event_1, NULL);
+
   CGEventSourceRef source;
   
   CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
@@ -121,9 +135,15 @@ CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef 
   return event;
 }
 
-main() {
-  CFMachPortRef port;
-  CFRunLoopSourceRef source;
+CGEventRef event_handler2(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef event, void *data) {
+  gettimeofday(&last_event_2, NULL);
+  // TODO; get rid of this once it works
+  printf(".");fflush(stdout); return event;
+}
+
+create_and_run_loop() {
+  CFMachPortRef port, port2, port3;
+  CFRunLoopSourceRef source, source2, source3;
 
   if (!(port = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
                                 (CGEventMaskBit(kCGEventKeyDown)|CGEventMaskBit(kCGEventFlagsChanged)),
@@ -135,13 +155,42 @@ main() {
     printf("error creating source\n"); exit(1);
   }
 
+  if (!(port2 = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
+                                (CGEventMaskBit(kCGEventKeyDown)|CGEventMaskBit(kCGEventFlagsChanged)),
+                                 event_handler2, NULL))) {
+    printf("error creating tap\n"); exit(1);
+  }
+
+  if (!(source2 = CFMachPortCreateRunLoopSource(NULL, port2, 0))) {
+    printf("error creating source\n"); exit(1);
+  }
+
   CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+  CFRunLoopAddSource(CFRunLoopGetCurrent(), source2, kCFRunLoopDefaultMode);
 
   CFRelease(port);
   CFRelease(source);
-
-  signal(SIGINT, sig_handler);
-  signal(SIGTERM, sig_handler);
+  CFRelease(port2);
+  CFRelease(source2);
 
   CFRunLoopRun();
+}
+
+void sig_handler(int sig) {
+  if (sig == SIGINT || sig == SIGTERM) stop_loop();
+  if (sig == SIGALRM) check_times();
+}
+
+main() {
+  signal(SIGINT, sig_handler);
+  signal(SIGTERM, sig_handler);
+  signal(SIGALRM, sig_handler);
+
+  struct itimerval it_old, it_val = { { 0, 500000 }, { 0, 500000 } };
+  
+  setitimer(ITIMER_REAL, &it_val, &it_old);
+
+  create_and_run_loop();
+
+  printf("exiting...\n");
 }
