@@ -1,3 +1,8 @@
+require 'rubygems'
+require 'eventmachine'
+
+MAPPINGS_FILE = File.expand_path('~/.remap_mappings.rb')
+
 ASHIFT = 0x00010000
 SHIFT = 0x00020000
 CTRL = 0x00040000
@@ -166,15 +171,18 @@ def key_to_str(keycode, flags)
   s << keycode.to_s
 end
 
-mapper = Remapper.new
+mapper = nil
 
-eval(File.read(fn=File.expand_path('~/.remap_mappings.rb')), nil, fn, 0)
+load_mappings = -> do
+  mapper = Remapper.new
+  eval(data=File.read(MAPPINGS_FILE), nil, MAPPINGS_FILE, 0)
+  puts "loaded",data
+end
+load_mappings.()
 
-require 'rubygems'
-require 'eventmachine'
-
-EventMachine.run do
-  EventMachine.start_server '127.0.0.1', 9999, Module.new {
+EM.kqueue = true
+EM.run do
+  EM.start_server '127.0.0.1', 9999, Module.new {
     define_method :receive_data do |data|
       @buf ||= ''
       @buf << data
@@ -190,4 +198,28 @@ EventMachine.run do
       end
     end
   }
+
+  register_file_watcher = -> do
+    EM.watch_file MAPPINGS_FILE, Module.new {
+      define_method :file_modified do
+        puts "reloading mappings"
+        EM.add_timer(0.1) { load_mappings.() }
+      end
+
+      define_method :file_moved do
+        file_modified
+      end
+
+      define_method :file_deleted do
+        file_modified
+      end
+
+      define_method :unbind do
+        EM.add_timer 0.1, &register_watcher
+      end
+    }
+  end
+  register_file_watcher.()
+
+  EM.error_handler {|e| puts e, e.backtrace }
 end
