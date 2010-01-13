@@ -25,6 +25,7 @@ KEY_NAMES = [
   [NUM, 'num']
 ]
 
+trap('INT') { puts "ctrl-C exit!"; exit }
 
 class RemapServer < GServer
   def initialize(port)
@@ -37,7 +38,12 @@ class RemapServer < GServer
     new_keycode, new_flags = remap_keys(keycode, flags)
 
     puts "#{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)} .. [#{keycode}/#{flags}] -> [#{new_keycode}/#{new_flags}]"
-    io.puts "#{new_keycode} #{new_flags}"
+    print dsl_remap = `/Users/steve/.rvm/ruby-1.9.1-p376/bin/ruby remap_dsl.rb #{keycode} #{flags}`
+    if dsl_remap =~ /^(\d+) (\d+)$/
+      io.puts "#$1 #$2"
+    else
+      io.puts "#{new_keycode} #{new_flags}"
+    end
   end
 
   def remap_keys(keycode, oflags)
