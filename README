@@ -1,0 +1,1 @@
+copy remap_remapping.rb.example to ~/.remap_remappings.rb and customize!
