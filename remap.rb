@@ -1,11 +1,3 @@
-require 'gserver'
-
-class Fixnum
-  def has?(bit)
-    self & bit == bit
-  end
-end
-
 ASHIFT = 0x00010000
 SHIFT = 0x00020000
 CTRL = 0x00040000
@@ -16,83 +8,186 @@ HELP = 0x00400000
 FN = 0x00800000
 NON = 0x00000100
 
-KEY_NAMES = [
-  [SHIFT, 'shift'],
-  [CTRL, 'crtl'],
-  [ALT, 'alt'],
-  [CMD, 'cmd'],
-  [FN, 'fn'],
-  [NUM, 'num']
-]
+KEY_TO_NAME = {
+  SHIFT => 'shift',
+  CTRL => 'ctrl',
+  ALT => 'alt',
+  CMD => 'cmd',
+  FN => 'fn',
+  NUM => 'num'
+}
+NAME_TO_KEY = KEY_TO_NAME.invert
 
-trap('INT') { puts "ctrl-C exit!"; exit }
+SYM_TO_KEYCODE = {
+  :arrow => (0x7b..0x7e),
+  :tab => 0x30,
+  :backspace => 0x33
+}
 
-class RemapServer < GServer
-  def initialize(port)
-    super(port, '127.0.0.1')
-  end
+class Remapper
+  class MappingsEval < BasicObject
+    def method_missing m, *a
+      m.to_sym
+    end
 
-  def serve(io)
-    keycode, flags = io.gets.split(/\s+/).map {|s| s.strip.to_i }
-
-    new_keycode, new_flags = remap_keys(keycode, flags)
-
-    puts "#{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)} .. [#{keycode}/#{flags}] -> [#{new_keycode}/#{new_flags}]"
-    print dsl_remap = `/Users/steve/.rvm/ruby-1.9.1-p376/bin/ruby remap_dsl.rb #{keycode} #{flags}`
-    if dsl_remap =~ /^(\d+) (\d+)$/
-      io.puts "#$1 #$2"
-    else
-      io.puts "#{new_keycode} #{new_flags}"
+    def eval(&blk)
+      $mappings = []
+      self.instance_eval &blk
+      mappings, $mappings = $mappings, nil
+      mappings.map {|m| Mapping.new(m) }
     end
   end
 
-  def remap_keys(keycode, oflags)
-    key_bits = KEY_NAMES.map{|b,n| b }
-    flags = oflags & key_bits.inject {|bits, bit| bits | bit }
+  class Mapping
+    MASK = KEY_TO_NAME.keys.inject(0) {|mask, bit| mask | bit }
+    def initialize(mapping)
+      (*from_flags, from_keycode), (*to_flags, to_keycode) = mapping
 
-    # cmd-tab -> alt-tab
-    if keycode == 0x30 and flags.has? CMD
-      oflags &= ~CMD
-      oflags |= ALT
+      @from_keycode = sym_to_keycode(from_keycode)
+      @to_keycode = sym_to_keycode(to_keycode)
+
+      @from_flags, @from_opt_flags = arr_to_flags(from_flags, from_keycode)
+      @to_flags, @to_opt_flags = arr_to_flags(to_flags, to_keycode)
     end
 
-    # arrows
-    if (0x7b..0x7e).include? keycode and flags.has? NUM|FN
-      # map ctrl-(shift)-arrow -> alt-(shift)-arrow
-      if (flags&~SHIFT) == (CTRL|NUM|FN)
-        oflags &= ~CTRL
-        oflags |= ALT
-      end
-
-      # cmd-ctrl-arrows -> cmd-arrows (changign spaces)
-      if flags == CMD|CTRL|NUM|FN
-        oflags &= ~CTRL
-      end
-
-      # shift-cmd-ctrl-arrows -> cmd-ctrl-arrows (for moving windows between spaces)
-      if flags == CMD|CTRL|SHIFT|NUM|FN
-        oflags &= ~SHIFT
+    def remap_key(keycode, flags)
+      saved = flags & ~MASK
+      flags &= MASK
+      if matches?(keycode, flags)
+        to_keycode = keycode_changes? ? @to_keycode : keycode
+        to_flags = @to_flags|saved
+        to_flags |= @to_opt_flags  if (flags & @from_opt_flags) != 0
+        [to_keycode, to_flags]
       end
     end
 
-    # ctrl-backspace -> alt-backspace
-    if keycode == 0x33 and flags == CTRL
-      oflags &= ~CTRL
-      oflags |= ALT
+    private
+
+    def keycode_changes?
+      @from_keycode != @to_keycode
     end
 
-    [keycode, oflags]
+    def arr_to_flags(arr, keycode = nil)
+      flags = opt_flags = 0
+      arr.each  do |key|
+        flags |= NAME_TO_KEY[key.to_s] || 0  if key.is_a? Symbol
+        opt_flags |= NAME_TO_KEY[key.first.to_s] || 0  if key.is_a? Array
+      end
+
+      case keycode
+      when :arrow
+        flags |= NUM|FN
+      end
+
+      [flags, opt_flags]
+    end
+
+    def sym_to_keycode(sym)
+      SYM_TO_KEYCODE[sym]
+    end
+
+    def matches?(keycode, flags)
+      @from_keycode === keycode and @from_flags == flags&~@from_opt_flags
+    end
+
   end
 
-  def key_to_str(keycode, flags)
-    s = ''
-    KEY_NAMES.map do |bit, name|
-      s << name << '-' if ! (flags & bit).zero?
+  def remap(&blk)
+    @mappings ||= []
+    temp_defines do
+      @mappings += MappingsEval.new.eval &blk
     end
-    s << keycode.to_s
+  end
+
+  def remap_key(keycode, flags)
+    @mappings.each do |mapping|
+      new_keycode, new_flags = mapping.remap_key(keycode, flags)
+      return new_keycode, new_flags  if new_keycode
+    end
+
+    [keycode, flags]
+  end
+
+  private
+
+  def temp_defines
+    temp_define [Symbol, :-] => :symbol_minus,
+                [Array, :-] => :array_minus,
+                [Array, :>>] => :array_bit_shift do
+      yield
+    end
+  end
+
+  def temp_define(meths)
+    old = {}
+    meths.each do |(k, m), meth|
+      b = send(meth)
+      old[[k,m]] = "_#{rand(2**128).to_s(36)}"
+      k.class_eval do
+        alias_method old[[k,m]], m  if method_defined?(m)
+        define_method m, &b
+      end
+    end
+    yield
+  ensure
+    meths.each do |(k, m), b|
+      k.class_eval do
+        if old[[k,m]] and method_defined?(old[[k,m]])
+          alias_method m, old[[k,m]]  
+          remove_method old[[k,m]]
+        end
+      end
+    end
+  end
+
+  def symbol_minus
+    lambda {|s| [self, s] }
+  end
+
+  def array_minus
+    lambda do |o|
+      return self << o  if o.is_a? Symbol
+      return self << "_#{o.first}_".to_sym  if is_a? Array
+    end
+  end
+
+  def array_bit_shift
+    lambda do |a|
+      $mappings << [self, a]
+    end
   end
 end
 
-s = RemapServer.new(9999)
-s.start
-s.join
+def key_to_str(keycode, flags)
+  s = ''
+  KEY_TO_NAME.each do |bit, name|
+    s << name << '-'  if flags & bit != 0
+  end
+  s << keycode.to_s
+end
+
+mapper = Remapper.new
+
+eval(File.read(fn=File.expand_path('~/.remap_mappings.rb')), nil, fn, 0)
+
+require 'rubygems'
+require 'eventmachine'
+
+EventMachine.run do
+  EventMachine.start_server '127.0.0.1', 9999, Module.new {
+    define_method :receive_data do |data|
+      @buf ||= ''
+      @buf << data
+      if @buf =~ /^(\d+) (\d+)$/
+        keycode, flags = $1.to_i, $2.to_i
+
+        new_keycode, new_flags =  mapper.remap_key(keycode, flags)
+
+        STDERR.puts "#{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)}"
+        STDERR.puts "ret: #{new_keycode} #{new_flags}"
+
+        send_data "#{new_keycode} #{new_flags}\n"
+      end
+    end
+  }
+end

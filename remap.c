@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 
 struct timeval last_event_1 = { 0, 0 }, last_event_2 = { 0, 0 };
+int exit_code = 0;
 
 struct flag_mapping {
   CGEventFlags bit;
@@ -15,6 +16,12 @@ void stop_loop() {
   CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
+void bad_socket() {
+  printf("bad socket.. quitting\n");
+  exit_code = 2;
+  stop_loop();
+}
+
 void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
   CGKeyCode new_keycode;
   CGEventFlags new_flags;
@@ -22,10 +29,12 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
 
   struct sockaddr_in sin = { .sin_family = AF_INET, .sin_port = htons(9999), .sin_addr = { .s_addr = inet_addr("127.0.0.1") } };
   int s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP), ret, len = 0;
-  connect(s, &sin, sizeof(sin));
+
+  if (s < 0) return bad_socket();
+  if (connect(s, &sin, sizeof(sin)) < 0) return bad_socket();
 
   sprintf(tmp, "%hu %lu\n", keycode, flags);
-  ret = write(s, tmp, strlen(tmp));
+  if (write(s, tmp, strlen(tmp)) < 0) return bad_socket();
 
   memset(tmp, 0, sizeof(tmp));
   while (ret > 0 && !strstr(tmp, "\n")) {
@@ -33,6 +42,9 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
     len += ret;
   }
   tmp[len] = 0;
+
+  if (ret < 0)
+    return bad_socket();
 
   close(s);
 
@@ -121,11 +133,14 @@ create_and_run_loop() {
 }
 
 void sig_handler(int sig) {
-  if (sig == SIGINT || sig == SIGTERM) stop_loop();
+  if (sig == SIGINT || sig == SIGTERM) {
+    exit_code = 2;
+    stop_loop();
+  }
   if (sig == SIGALRM) check_times();
 }
 
-main() {
+int main() {
   signal(SIGINT, sig_handler);
   signal(SIGTERM, sig_handler);
   signal(SIGALRM, sig_handler);
@@ -137,4 +152,6 @@ main() {
   create_and_run_loop();
 
   printf("exiting...\n");
+  
+  return exit_code;
 }
