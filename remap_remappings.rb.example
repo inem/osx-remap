@@ -3,5 +3,5 @@ mapper.remap do
   ctrl-backspace >> alt-backspace
   ctrl-[shift]-arrow >> alt-[shift]-arrow
   shift-cmd-ctrl-arrow >> cmd-ctrl-arrow
-  cmd-tab >> alt-tab
+  cmd-[shift]-tab >> alt-[shift]-tab
 end
