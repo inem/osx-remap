@@ -11,7 +11,13 @@ CMD = 0x00100000
 NUM = 0x00200000
 HELP = 0x00400000
 FN = 0x00800000
+
 NON = 0x00000100
+
+SAVE_MASK = NON
+
+LEFT_ALT = ALT|0x20
+RIGHT_ALT = ALT|0x40
 
 KEY_TO_NAME = {
   SHIFT => 'shift',
@@ -33,7 +39,6 @@ SYM_TO_KEYCODE = {
   :backspace => 0x33
 }
 
-      require 'pp'
 class Remapper
   class MappingsEval < BasicObject
     def only *a
@@ -86,7 +91,7 @@ class Remapper
     end
 
     def remap_key(keycode, flags, process_name)
-      saved = flags & ~MASK
+      saved = flags & SAVE_MASK
       flags &= MASK
       if matches?(keycode, flags, process_name)
         to_keycode = keycode_changes? ? @to_keycode : keycode
@@ -229,7 +234,7 @@ EM.run do
         new_keycode, new_flags =  mapper.remap_key(keycode, flags, process_name)
 
         STDERR.puts "[#{process_name}] #{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)}"
-        STDERR.puts "ret: #{new_keycode} #{new_flags}"
+        STDERR.puts "ret: #{new_keycode.to_s 2} #{new_flags.to_s 2}"
 
         send_data "#{new_keycode} #{new_flags}\n"
       end

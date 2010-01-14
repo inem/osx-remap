@@ -51,6 +51,7 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags, char *p
     sscanf(tmp, "%hu %lu %s\n", &new_keycode, &new_flags);
     printf("[%hu/%lu] -> [%hu/%lu]\n", keycode, flags, new_keycode, new_flags);
     CGEventSetFlags(event, new_flags);
+    CGEventSetIntegerValueField(event, kCGKeyboardEventKeycode, new_keycode);
   }
 }
 
