@@ -25,19 +25,35 @@ NAME_TO_KEY = KEY_TO_NAME.invert
 
 SYM_TO_KEYCODE = {
   :arrow => (0x7b..0x7e),
+  :left => 0x7b,
+  :right => 0x7c,
+  :b => 11,
+  :f => 3,
   :tab => 0x30,
   :backspace => 0x33
 }
 
+      require 'pp'
 class Remapper
   class MappingsEval < BasicObject
-    def method_missing m, *a
+    def only *a
+      [:only, *a]
+    end
+
+    def except *a
+      [:except, *a]
+    end
+
+    def method_missing m, *a, &b
+      raise 'wtf are u doing?'  if a.size > 0
+      $apps_scope = b.call  if b
       m.to_sym
     end
 
     def eval(&blk)
       $mappings = []
       self.instance_eval &blk
+      ::Kernel.pp $mappings
       mappings, $mappings = $mappings, nil
       mappings.map {|m| Mapping.new(m) }
     end
@@ -46,19 +62,33 @@ class Remapper
   class Mapping
     MASK = KEY_TO_NAME.keys.inject(0) {|mask, bit| mask | bit }
     def initialize(mapping)
-      (*from_flags, from_keycode), (*to_flags, to_keycode) = mapping
+      (*from_flags, from_keycode_sym), (*to_flags, to_keycode_sym), apps_scope = mapping
 
-      @from_keycode = sym_to_keycode(from_keycode)
-      @to_keycode = sym_to_keycode(to_keycode)
+      @from_keycode = sym_to_keycode(from_keycode_sym)
+      @to_keycode = sym_to_keycode(to_keycode_sym)
 
-      @from_flags, @from_opt_flags = arr_to_flags(from_flags, from_keycode)
-      @to_flags, @to_opt_flags = arr_to_flags(to_flags, to_keycode)
+      @from_flags, @from_opt_flags = arr_to_flags(from_flags, from_keycode_sym)
+      @to_flags, @to_opt_flags = arr_to_flags(to_flags, to_keycode_sym)
+
+      if apps_scope
+        @apps_scope_type = apps_scope.shift
+        @apps_scope = apps_scope.map do |app|
+          case app
+          when Symbol
+            /#{app}/i
+          when Regexp
+            /#{app.source}/i
+          else
+            app
+          end
+        end
+      end
     end
 
-    def remap_key(keycode, flags)
+    def remap_key(keycode, flags, process_name)
       saved = flags & ~MASK
       flags &= MASK
-      if matches?(keycode, flags)
+      if matches?(keycode, flags, process_name)
         to_keycode = keycode_changes? ? @to_keycode : keycode
         to_flags = @to_flags|saved
         to_flags |= @to_opt_flags  if (flags & @from_opt_flags) != 0
@@ -80,7 +110,7 @@ class Remapper
       end
 
       case keycode
-      when :arrow
+      when :arrow, :left, :right
         flags |= NUM|FN
       end
 
@@ -91,10 +121,16 @@ class Remapper
       SYM_TO_KEYCODE[sym]
     end
 
-    def matches?(keycode, flags)
-      @from_keycode === keycode and @from_flags == flags&~@from_opt_flags
+    def matches?(keycode, flags, process_name)
+      @from_keycode === keycode and @from_flags == flags&~@from_opt_flags and process_name_matches?(process_name)
     end
 
+    def process_name_matches?(process_name)
+      return true  if ! @apps_scope
+
+      any = @apps_scope.any? {|a| a === process_name }
+      @apps_scope_type == :only ? any : !any
+    end
   end
 
   def remap(&blk)
@@ -104,9 +140,9 @@ class Remapper
     end
   end
 
-  def remap_key(keycode, flags)
+  def remap_key(keycode, flags, process_name)
     @mappings.each do |mapping|
-      new_keycode, new_flags = mapping.remap_key(keycode, flags)
+      new_keycode, new_flags = mapping.remap_key(keycode, flags, process_name)
       return new_keycode, new_flags  if new_keycode
     end
 
@@ -146,19 +182,20 @@ class Remapper
   end
 
   def symbol_minus
-    lambda {|s| [self, s] }
+    -> s { [self, s] }
   end
 
   def array_minus
-    lambda do |o|
+    -> o do
       return self << o  if o.is_a? Symbol
       return self << "_#{o.first}_".to_sym  if is_a? Array
     end
   end
 
   def array_bit_shift
-    lambda do |a|
-      $mappings << [self, a]
+    -> a do
+      $mappings << [self, a, $apps_scope]
+      $apps_scope = nil
     end
   end
 end
@@ -186,12 +223,12 @@ EM.run do
     define_method :receive_data do |data|
       @buf ||= ''
       @buf << data
-      if @buf =~ /^(\d+) (\d+)$/
-        keycode, flags = $1.to_i, $2.to_i
+      if @buf =~ /^(\d+) (\d+) (.+?)$/
+        keycode, flags, process_name = $1.to_i, $2.to_i, $3
 
-        new_keycode, new_flags =  mapper.remap_key(keycode, flags)
+        new_keycode, new_flags =  mapper.remap_key(keycode, flags, process_name)
 
-        STDERR.puts "#{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)}"
+        STDERR.puts "[#{process_name}] #{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)}"
         STDERR.puts "ret: #{new_keycode} #{new_flags}"
 
         send_data "#{new_keycode} #{new_flags}\n"
@@ -215,7 +252,7 @@ EM.run do
       end
 
       define_method :unbind do
-        EM.add_timer 0.1, &register_watcher
+        EM.add_timer 0.1, &register_file_watcher
       end
     }
   end

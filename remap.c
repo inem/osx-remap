@@ -16,13 +16,13 @@ void stop_loop() {
   CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
-void bad_socket() {
-  printf("bad socket.. quitting\n");
+void bad_socket(char *where) {
+  printf("bad socket on %s.. quitting\n", where);
   exit_code = 2;
   stop_loop();
 }
 
-void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
+void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags, char *process_name) {
   CGKeyCode new_keycode;
   CGEventFlags new_flags;
   char tmp[1024];
@@ -30,11 +30,11 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
   struct sockaddr_in sin = { .sin_family = AF_INET, .sin_port = htons(9999), .sin_addr = { .s_addr = inet_addr("127.0.0.1") } };
   int s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP), ret, len = 0;
 
-  if (s < 0) return bad_socket();
-  if (connect(s, &sin, sizeof(sin)) < 0) return bad_socket();
+  if (s < 0) return bad_socket("socket");
+  if (connect(s, &sin, sizeof(sin)) < 0) return bad_socket("connect");
 
-  sprintf(tmp, "%hu %lu\n", keycode, flags);
-  if (write(s, tmp, strlen(tmp)) < 0) return bad_socket();
+  sprintf(tmp, "%hu %lu %s\n", keycode, flags, process_name);
+  if (write(s, tmp, strlen(tmp)) < 0) return bad_socket("write");
 
   memset(tmp, 0, sizeof(tmp));
   while (ret > 0 && !strstr(tmp, "\n")) {
@@ -43,13 +43,12 @@ void remap_keys(CGEventRef event, CGKeyCode keycode, CGEventFlags flags) {
   }
   tmp[len] = 0;
 
-  if (ret < 0)
-    return bad_socket();
+  if (ret < 0) return bad_socket("read");
 
   close(s);
 
   if (ret > 0) {
-    sscanf(tmp, "%hu %lu\n", &new_keycode, &new_flags);
+    sscanf(tmp, "%hu %lu %s\n", &new_keycode, &new_flags);
     printf("[%hu/%lu] -> [%hu/%lu]\n", keycode, flags, new_keycode, new_flags);
     CGEventSetFlags(event, new_flags);
   }
@@ -82,11 +81,17 @@ CGEventRef event_handler(CGEventTapProxy proxy, CGEventType ev_type, CGEventRef 
   CGKeyCode keycode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
   CGEventFlags flags = CGEventGetFlags(event);
 
-  if (!(source = CGEventCreateSourceFromEvent(event))) return event;
+  CFStringRef cfs;
+  char process_name[1024] = {0};
+  ProcessSerialNumber p;
 
-  remap_keys(event, keycode, flags);
+  if (GetFrontProcess(&p) == noErr) {
+    CopyProcessName(&p, &cfs);
+    CFStringGetCString(cfs, process_name, sizeof(process_name), 0);
+    CFRelease(cfs);
+  }
 
-  CFRelease(source);
+  remap_keys(event, keycode, flags, process_name);
 
   return event;
 }

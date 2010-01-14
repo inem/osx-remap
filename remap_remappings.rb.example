@@ -4,4 +4,6 @@ mapper.remap do
   ctrl-[shift]-arrow >> alt-[shift]-arrow
   shift-cmd-ctrl-arrow >> cmd-ctrl-arrow
   cmd-[shift]-tab >> alt-[shift]-tab
+  cmd-a >> cmd-b { only firefox }
+  cmd-z >> ctrl-z { except 'Google Chrome', /microsoft/ }
 end
