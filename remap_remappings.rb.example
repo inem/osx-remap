@@ -6,4 +6,6 @@ mapper.remap do
   cmd-[shift]-tab >> alt-[shift]-tab
   cmd-a >> cmd-b { only firefox }
   cmd-z >> ctrl-z { except 'Google Chrome', /microsoft/ }
+  ctrl-left >> alt-b { only terminal }
+  ctrl-right >> alt-f { only terminal }
 end
