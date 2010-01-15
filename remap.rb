@@ -1,5 +1,6 @@
 require 'rubygems'
 require 'eventmachine'
+require 'pp'
 
 MAPPINGS_FILE = File.expand_path('~/.remap_mappings.rb')
 
@@ -40,7 +41,9 @@ SYM_TO_KEYCODE = {
 }
 
 class Remapper
-  class MappingsEval < BasicObject
+  class MappingsEval
+    instance_methods.each {|m| undef_method m unless m =~ /^__|instance_eval/ }
+
     def only *a
       [:only, *a]
     end
@@ -67,7 +70,9 @@ class Remapper
   class Mapping
     MASK = KEY_TO_NAME.keys.inject(0) {|mask, bit| mask | bit }
     def initialize(mapping)
-      (*from_flags, from_keycode_sym), (*to_flags, to_keycode_sym), apps_scope = mapping
+      from_flags, to_flags, apps_scope = mapping
+      from_keycode_sym = from_flags.pop
+      to_keycode_sym = to_flags.pop
 
       @from_keycode = sym_to_keycode(from_keycode_sym)
       @to_keycode = sym_to_keycode(to_keycode_sym)
@@ -187,18 +192,18 @@ class Remapper
   end
 
   def symbol_minus
-    -> s { [self, s] }
+    lambda {|s| [self, s] }
   end
 
   def array_minus
-    -> o do
+    lambda do |o|
       return self << o  if o.is_a? Symbol
       return self << "_#{o.first}_".to_sym  if is_a? Array
     end
   end
 
   def array_bit_shift
-    -> a do
+    lambda do |a|
       $mappings << [self, a, $apps_scope]
       $apps_scope = nil
     end
@@ -215,12 +220,12 @@ end
 
 mapper = nil
 
-load_mappings = -> do
+load_mappings = lambda do
   mapper = Remapper.new
   eval(data=File.read(MAPPINGS_FILE), nil, MAPPINGS_FILE, 0)
   puts "loaded",data
 end
-load_mappings.()
+load_mappings.call
 
 EM.kqueue = true
 EM.run do
@@ -241,11 +246,11 @@ EM.run do
     end
   }
 
-  register_file_watcher = -> do
+  register_file_watcher = lambda do
     EM.watch_file MAPPINGS_FILE, Module.new {
       define_method :file_modified do
         puts "reloading mappings"
-        EM.add_timer(0.1) { load_mappings.() }
+        EM.add_timer(0.1) { load_mappings.call }
       end
 
       define_method :file_moved do
@@ -261,7 +266,7 @@ EM.run do
       end
     }
   end
-  register_file_watcher.()
+  register_file_watcher.call
 
   EM.error_handler {|e| puts e, e.backtrace }
 end
