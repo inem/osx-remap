@@ -1,11 +1,20 @@
 mapper.remap do 
-  cmd-ctrl-arrow >> cmd-arrow
-  ctrl-backspace >> alt-backspace
-  ctrl-[shift]-arrow >> alt-[shift]-arrow
+  cmd-ctrl-arrow       >> cmd-arrow
   shift-cmd-ctrl-arrow >> cmd-ctrl-arrow
-  cmd-[shift]-tab >> alt-[shift]-tab
-  cmd-a >> cmd-b { only firefox }
-  cmd-z >> ctrl-z { except 'Google Chrome', /microsoft/ }
-  ctrl-left >> alt-b { only terminal }
-  ctrl-right >> alt-f { only terminal }
+  ctrl-backspace       >> alt-backspace
+
+  ctrl-[shift]-arrow >> alt-[shift]-arrow
+  cmd-[shift]-tab    >> alt-[shift]-tab   ( except /adobe.*/ )
+
+  ctrl-left  >> alt-b  ( only terminal )
+  ctrl-right >> alt-f  ( only terminal )
+
+  ctrl-l >> cmd-l   ( only firefox, 'Google Chrome' )
+  ctrl-z >> cmd-z   ( only /microsoft (word|excel|powerpoint)/ }
 end
+
+('a'..'c').each do |key|
+  mapper.remap { cmd-key >> ctrl-key }
+end
+
+%w(h j k l).each {|key| mapper.remap { ctrl-key >> key (only macvim)  } }

@@ -53,7 +53,8 @@ class Remapper
     end
 
     def method_missing m, *a, &b
-      raise 'wtf are u doing?'  if a.size > 0
+      raise "bad config line at\n#{caller*"\n"}"  if a.size > 1
+      $apps_scope = a.first  if a.size == 1
       $apps_scope = b.call  if b
       m.to_sym
     end
