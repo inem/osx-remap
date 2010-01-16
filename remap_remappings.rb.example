@@ -1,4 +1,4 @@
-mapper.remap do 
+remap do 
   cmd-ctrl-arrow       >> cmd-arrow
   shift-cmd-ctrl-arrow >> cmd-ctrl-arrow
   ctrl-backspace       >> alt-backspace
@@ -6,15 +6,16 @@ mapper.remap do
   ctrl-[shift]-arrow >> alt-[shift]-arrow
   cmd-[shift]-tab    >> alt-[shift]-tab   ( except /adobe.*/ )
 
-  ctrl-left  >> alt-b  ( only terminal )
-  ctrl-right >> alt-f  ( only terminal )
+  only terminal do
+    ctrl-left  >> alt-b
+    ctrl-right >> alt-f
+  end
 
-  ctrl-l >> cmd-l   ( only firefox, 'Google Chrome' )
-  ctrl-z >> cmd-z   ( only /microsoft (word|excel|powerpoint)/ }
+  ctrl-z >> cmd-z   ( only /microsoft (word|excel|powerpoint)/ )
+
+  only firefox, 'Google Chrome', safari do
+    [l, t, w].each do |key|
+      ctrl-key >> cmd-key
+    end
+  end
 end
-
-('a'..'c').each do |key|
-  mapper.remap { cmd-key >> ctrl-key }
-end
-
-%w(h j k l).each {|key| mapper.remap { ctrl-key >> key (only macvim)  } }

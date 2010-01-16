@@ -30,26 +30,39 @@ KEY_TO_NAME = {
 }
 NAME_TO_KEY = KEY_TO_NAME.invert
 
+
 SYM_TO_KEYCODE = {
   :arrow => (0x7b..0x7e),
   :left => 0x7b,
   :right => 0x7c,
-  :b => 11,
-  :f => 3,
   :tab => 0x30,
   :backspace => 0x33
 }
+%w(a 0 b 11 c 8 d 2 e 14 f 3 g 5 h 4 i 34 j 38 k 40 l 37 m 46 n 45 
+   o 31 p 35 q 12 r 15 s 1 t 17 u 32 v 9 w 13 x 7 y 16 z 6).each_slice(2) do |letter, keycode|
+  SYM_TO_KEYCODE[letter.to_sym] = keycode.to_i
+end
 
 class Remapper
   class MappingsEval
     instance_methods.each {|m| undef_method m unless m =~ /^__|instance_eval/ }
 
-    def only *a
-      [:only, *a]
+    def only *a, &b
+      __scope_it(:only, *a, &b)
     end
 
-    def except *a
-      [:except, *a]
+    def except *a, &b
+      __scope_it(:except, *a, &b)
+    end
+
+    def __scope_it(type, *a, &b)
+      scope = [type, *a]
+      if b
+        $block_apps_scope = scope
+        b.call
+        $block_apps_scope = nil
+      end
+      scope
     end
 
     def method_missing m, *a, &b
@@ -205,10 +218,15 @@ class Remapper
 
   def array_bit_shift
     lambda do |a|
-      $mappings << [self, a, $apps_scope]
+      scope = ($block_apps_scope || $apps_scope)
+      $mappings << [self, a, scope && scope.dup]
       $apps_scope = nil
     end
   end
+end
+
+def remap *a, &b
+  $mapper.remap *a, &b
 end
 
 def key_to_str(keycode, flags)
@@ -219,10 +237,8 @@ def key_to_str(keycode, flags)
   s << keycode.to_s
 end
 
-mapper = nil
-
 load_mappings = lambda do
-  mapper = Remapper.new
+  $mapper = Remapper.new
   eval(data=File.read(MAPPINGS_FILE), nil, MAPPINGS_FILE, 0)
   puts "loaded",data
 end
@@ -237,7 +253,7 @@ EM.run do
       if @buf =~ /^(\d+) (\d+) (.+?)$/
         keycode, flags, process_name = $1.to_i, $2.to_i, $3
 
-        new_keycode, new_flags =  mapper.remap_key(keycode, flags, process_name)
+        new_keycode, new_flags =  $mapper.remap_key(keycode, flags, process_name)
 
         STDERR.puts "[#{process_name}] #{key_to_str(keycode, flags)} -> #{key_to_str(new_keycode, new_flags)}"
         STDERR.puts "ret: #{new_keycode.to_s 2} #{new_flags.to_s 2}"
